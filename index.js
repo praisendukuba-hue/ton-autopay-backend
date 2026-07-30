@@ -1,109 +1,148 @@
 require("dotenv").config();
+
 const express = require("express");
 const crypto = require("crypto");
+const { mnemonicToPrivateKey } = require("@ton/crypto");
+const { TonClient, WalletContractV4 } = require("@ton/ton");
 
 const app = express();
+
 app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
+
 const API_KEY = process.env.API_KEY;
+const TON_API_KEY = process.env.TON_API_KEY;
+const TON_MNEMONIC = process.env.TON_MNEMONIC;
 
-// Updated Constants
-const MIN_WITHDRAW = 0.03;
-const WITHDRAW_FEE = 0.01;
 
+// TON connection
+const client = new TonClient({
+    endpoint: "https://toncenter.com/api/v2/jsonRPC",
+    apiKey: TON_API_KEY
+});
+
+
+// Temporary storage
 const withdrawals = new Map();
 
-app.get("/", (req, res) => {
-    res.json({ status: "online", message: "TON AutoPay Backend Running" });
+
+// Home
+app.get("/", (req,res)=>{
+    res.json({
+        status:"online",
+        message:"TON AutoPay Backend Running"
+    });
 });
 
-app.post("/withdraw", async (req, res) => {
-    try {
-        const key = req.headers["x-api-key"];
-        if (key !== API_KEY) {
-            return res.status(401).json({ success: false, message: "Unauthorized" });
-        }
 
-        const { user_id, wallet, amount, request_id } = req.body;
+// Wallet check
+app.get("/wallet-check", async(req,res)=>{
 
-        // 1. Basic Validation
-        if (!user_id || !wallet || !amount) {
-            return res.status(400).json({ success: false, message: "Missing user_id, wallet or amount" });
-        }
+    try{
 
-        const withdrawAmount = parseFloat(amount);
+        const words = TON_MNEMONIC.split(" ");
 
-        // 2. Minimum Withdrawal Check
-        if (withdrawAmount < MIN_WITHDRAW) {
-            return res.status(400).json({
-                success: false,
-                message: `Minimum withdrawal is ${MIN_WITHDRAW} TON`
-            });
-        }
+        const keyPair = await mnemonicToPrivateKey(words);
 
-        // 3. Duplicate Prevention Logic
-        // We use request_id sent from the frontend to ensure the same click doesn't pay twice
-        const dedupeKey = request_id || `${user_id}_${withdrawAmount}_${wallet}`; 
-        if (withdrawals.has(dedupeKey)) {
-            return res.status(400).json({ success: false, message: "Duplicate or processing request" });
-        }
-
-        // 4. Calculate Net Amount (Amount minus Fee)
-        const netAmount = (withdrawAmount - WITHDRAW_FEE).toFixed(4);
-
-        if (netAmount <= 0) {
-            return res.status(400).json({ success: false, message: "Amount too low to cover fees" });
-        }
-
-        const transferId = crypto.randomUUID();
-
-        // 5. Store the record
-        withdrawals.set(transferId, {
-            user_id,
-            wallet,
-            requestedAmount: withdrawAmount,
-            fee: WITHDRAW_FEE,
-            netAmount: parseFloat(netAmount),
-            status: "pending",
-            created: new Date()
+        const wallet = WalletContractV4.create({
+            workchain:0,
+            publicKey:keyPair.publicKey
         });
 
-        /*
-        =====================================
-        TON PAYMENT INTEGRATION (tonweb or @ton/ton)
-        =====================================
-        Example logic (Pseudo-code):
-        const result = await tonWallet.sendTransfer({
-            to: wallet,
-            amount: toNano(netAmount), // Send the amount MINUS fee
-            ...
-        });
-        */
+        const balance = await client.getBalance(wallet.address);
 
         res.json({
-            success: true,
-            message: "Withdrawal queued",
-            transferId,
-            details: {
-                sent_to_wallet: wallet,
-                fee_deducted: WITHDRAW_FEE,
-                user_will_receive: parseFloat(netAmount)
-            }
+            success:true,
+            address:wallet.address.toString(),
+            balance:balance.toString()
         });
 
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ success: false, message: "Server error" });
+
+    }catch(e){
+
+        res.status(500).json({
+            success:false,
+            error:e.message
+        });
+
     }
+
 });
 
-app.get("/withdraw/:id", (req, res) => {
+
+// Withdrawal request
+app.post("/withdraw",(req,res)=>{
+
+    const auth = req.headers["x-api-key"];
+
+    if(auth !== API_KEY){
+        return res.status(401).json({
+            success:false,
+            message:"Invalid API key"
+        });
+    }
+
+
+    const {
+        user_id,
+        wallet,
+        amount
+    } = req.body;
+
+
+    if(!user_id || !wallet || !amount){
+
+        return res.status(400).json({
+            success:false,
+            message:"Missing data"
+        });
+
+    }
+
+
+    const id = crypto.randomUUID();
+
+
+    withdrawals.set(id,{
+        user_id,
+        wallet,
+        amount,
+        status:"pending",
+        created:new Date()
+    });
+
+
+    res.json({
+        success:true,
+        withdrawal_id:id,
+        message:"Withdrawal queued"
+    });
+
+
+});
+
+
+// Status check
+app.get("/withdraw/:id",(req,res)=>{
+
     const data = withdrawals.get(req.params.id);
-    if (!data) return res.status(404).json({ success: false, message: "Not found" });
-    res.json({ success: true, data });
+
+    if(!data){
+        return res.status(404).json({
+            success:false,
+            message:"Not found"
+        });
+    }
+
+    res.json({
+        success:true,
+        data
+    });
+
 });
 
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+
+app.listen(PORT,()=>{
+    console.log(`Server running on ${PORT}`);
 });
