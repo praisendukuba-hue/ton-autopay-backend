@@ -35,12 +35,8 @@ app.get("/", (req,res)=>{
     });
 });
 
-
-// Wallet check
 app.get("/wallet-check", async(req,res)=>{
-
     try{
-
         const words = TON_MNEMONIC.split(" ");
 
         const keyPair = await mnemonicToPrivateKey(words);
@@ -58,18 +54,13 @@ app.get("/wallet-check", async(req,res)=>{
             balance:balance.toString()
         });
 
-
     }catch(e){
-
         res.status(500).json({
             success:false,
             error:e.message
         });
-
     }
-
 });
-
 
 // Withdrawal request
 app.post("/withdraw",(req,res)=>{
