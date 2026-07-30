@@ -23,54 +23,76 @@ const client = new TonClient({
 });
 
 
-// Temporary storage
 const withdrawals = new Map();
 
 
 // Home
-app.get("/", (req,res)=>{
+app.get("/", (req, res) => {
     res.json({
-        status:"online",
-        message:"TON AutoPay Backend Running"
+        status: "online",
+        message: "TON AutoPay Backend Running"
     });
 });
 
-app.get("/wallet-check", async(req,res)=>{
-    try{
-        const words = TON_MNEMONIC.split(" ");
+
+// Wallet check
+app.get("/wallet-check", async (req, res) => {
+
+    try {
+
+        if (!TON_MNEMONIC) {
+            return res.status(500).json({
+                success: false,
+                message: "TON_MNEMONIC missing"
+            });
+        }
+
+
+        const words = TON_MNEMONIC.trim().split(/\s+/);
+
 
         const keyPair = await mnemonicToPrivateKey(words);
 
+
         const wallet = WalletContractV4.create({
-            workchain:0,
-            publicKey:keyPair.publicKey
+            workchain: 0,
+            publicKey: keyPair.publicKey
         });
+
 
         const balance = await client.getBalance(wallet.address);
 
+
         res.json({
-            success:true,
-            address:wallet.address.toString(),
-            balance:balance.toString()
+            success: true,
+            address: wallet.address.toString(),
+            balance: balance.toString()
         });
 
-    }catch(e){
+
+    } catch (error) {
+
+        console.log(error);
+
         res.status(500).json({
-            success:false,
-            error:e.message
+            success: false,
+            error: error.message
         });
+
     }
+
 });
 
+
 // Withdrawal request
-app.post("/withdraw",(req,res)=>{
+app.post("/withdraw", (req, res) => {
 
     const auth = req.headers["x-api-key"];
 
-    if(auth !== API_KEY){
+    if (auth !== API_KEY) {
         return res.status(401).json({
-            success:false,
-            message:"Invalid API key"
+            success: false,
+            message: "Invalid API key"
         });
     }
 
@@ -82,58 +104,57 @@ app.post("/withdraw",(req,res)=>{
     } = req.body;
 
 
-    if(!user_id || !wallet || !amount){
-
+    if (!user_id || !wallet || !amount) {
         return res.status(400).json({
-            success:false,
-            message:"Missing data"
+            success: false,
+            message: "Missing data"
         });
-
     }
 
 
     const id = crypto.randomUUID();
 
 
-    withdrawals.set(id,{
+    withdrawals.set(id, {
         user_id,
         wallet,
         amount,
-        status:"pending",
-        created:new Date()
+        status: "pending",
+        created: new Date()
     });
 
 
     res.json({
-        success:true,
-        withdrawal_id:id,
-        message:"Withdrawal queued"
+        success: true,
+        withdrawal_id: id,
+        message: "Withdrawal queued"
     });
-
 
 });
 
 
-// Status check
-app.get("/withdraw/:id",(req,res)=>{
+// Withdrawal status
+app.get("/withdraw/:id", (req, res) => {
 
     const data = withdrawals.get(req.params.id);
 
-    if(!data){
+
+    if (!data) {
         return res.status(404).json({
-            success:false,
-            message:"Not found"
+            success: false,
+            message: "Not found"
         });
     }
 
+
     res.json({
-        success:true,
+        success: true,
         data
     });
 
 });
 
 
-app.listen(PORT,()=>{
-    console.log(`Server running on ${PORT}`);
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
 });
