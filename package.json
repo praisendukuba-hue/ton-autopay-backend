@@ -6,7 +6,9 @@
     "start": "node index.js"
   },
   "dependencies": {
+    "dotenv": "^16.4.7",
     "express": "^4.21.2",
-    "dotenv": "^16.4.7"
+    "@ton/ton": "^15.0.0",
+    "@ton/crypto": "^3.2.0"
   }
 }
